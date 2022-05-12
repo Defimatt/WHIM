@@ -1,1 +1,1 @@
-# WHIM
+# WHIM NFT Minting dApp
