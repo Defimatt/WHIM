@@ -2,11 +2,19 @@ import { useState, useEffect } from 'react'
 import { initOnboard } from '../utils/onboard'
 import { useConnectWallet, useSetChain, useWallets } from '@web3-onboard/react'
 import { config } from '../dapp.config'
-import {
-  getClaimed,
-  getTotalMinted,
-  mint
-} from '../utils/interact'
+import { ethers } from 'ethers'
+const { createAlchemyWeb3 } = require('@alch/alchemy-web3')
+const { MerkleTree } = require('merkletreejs')
+const contract = require('../artifacts/contracts/WHIM.sol/WHIM.json')
+const keccak256 = require('keccak256')
+const allowlist = require('../scripts/allowlist.js')
+const web3 = createAlchemyWeb3(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL)
+
+const nftContract = new web3.eth.Contract(contract.abi, config.contractAddress)
+
+const leafNodes = allowlist.map((addr) => keccak256(addr))
+const merkleTree = new MerkleTree(leafNodes, keccak256, { sortPairs: true })
+const root = merkleTree.getRoot()
 
 export default function Mint() {
   const [{ wallet, connecting }, connect, disconnect] = useConnectWallet()
@@ -19,6 +27,62 @@ export default function Mint() {
   const [claimed, setIsClaimed] = useState(false)
   const [onboard, setOnboard] = useState(null)
 
+  const getTotalMinted = async () => {
+    const totalMinted = await nftContract.methods.totalSupply().call()
+    return totalMinted
+  }
+  
+  const getClaimed = async (address) => {
+    if (!address) return false
+  
+    const claimed = await nftContract.methods.claimed(address).call()
+    return claimed
+  }
+  
+  const mint = async () => {
+    if (!provider) {
+      return {
+        success: false,
+        status: 'Connect your wallet before minting'
+      }
+    }
+  
+    const leaf = keccak256(wallet?.accounts[0]?.address)
+    const proof = merkleTree.getHexProof(leaf)
+    const isValid = merkleTree.verify(proof, leaf, root)
+  
+    if (!isValid) {
+      return {
+        success: false,
+        status: '😞 Sorry, you are not on the allowlist'
+      }
+    }
+  
+    const signer = window.provider.getUncheckedSigner()
+  
+    try {
+      const {txHash} = await signer.sendTransaction({
+        to: config.contractAddress,
+        data: nftContract.methods.mint(proof).encodeABI()
+      })
+  
+      return {
+        success: true,
+        status: (
+          <a href={`https://rinkeby.etherscan.io/tx/${txHash}`} target="_blank">
+            <p>✅ Check out your transaction on Etherscan:</p>
+            <p>{`https://rinkeby.etherscan.io/tx/${txHash}`}</p>
+          </a>
+        )
+      }
+    } catch (error) {
+      return {
+        success: false,
+        status: '😞 Sorry, something went wrong: ' + error.message
+      }
+    }
+  }
+
   useEffect(() => {
     setOnboard(initOnboard)
   }, [])
@@ -26,12 +90,16 @@ export default function Mint() {
   useEffect(() => {
     setStatus(null)
     async function updateClaimedStatus() {
-      setIsClaimed(await getClaimed(window.ethereum.selectedAddress))
+      setIsClaimed(!(wallet?.accounts[0]?.address) ? false : await getClaimed(wallet?.accounts[0]?.address))
     }
 
     updateClaimedStatus()
     
-    console.log(wallet)
+    if (!wallet?.provider) {
+      window.provider = null
+    } else {
+      window.provider = new ethers.providers.Web3Provider(wallet.provider, 'any')
+    }
   },[wallet])
 
   useEffect(() => {
