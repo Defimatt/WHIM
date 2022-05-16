@@ -61,7 +61,7 @@ export default function Mint() {
     const signer = window.provider.getUncheckedSigner()
   
     try {
-      const {txHash} = await signer.sendTransaction({
+      const {hash} = await signer.sendTransaction({
         to: config.contractAddress,
         data: nftContract.methods.mint(proof).encodeABI()
       })
@@ -69,9 +69,9 @@ export default function Mint() {
       return {
         success: true,
         status: (
-          <a href={`https://rinkeby.etherscan.io/tx/${txHash}`} target="_blank">
+          <a href={`https://rinkeby.etherscan.io/tx/${hash}`} target="_blank">
             <p>✅ Check out your transaction on Etherscan:</p>
-            <p>{`https://rinkeby.etherscan.io/tx/${txHash}`}</p>
+            <p>{`https://rinkeby.etherscan.io/tx/${hash}`}</p>
           </a>
         )
       }
